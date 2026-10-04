@@ -21,12 +21,23 @@ static uint8_t GetByte(const ap_uint<128> &word, unsigned lane) {
   return static_cast<uint8_t>(word.range(lane * 8 + 7, lane * 8).to_uint());
 }
 
-static uint8_t Golden(unsigned n, unsigned m, unsigned k_size,
-                      unsigned layer, bool gelu) {
+static int32_t GetInt32(const ap_uint<128> &word, unsigned lane) {
+  ap_int<32> value;
+  value.range() = word.range(lane * 32 + 31, lane * 32);
+  return value.to_int();
+}
+
+static int32_t GoldenAcc(unsigned n, unsigned m, unsigned k_size) {
   int64_t acc = 0;
   for (unsigned k = 0; k < k_size; ++k) {
     acc += static_cast<int64_t>(InputA(k, n)) * InputB(k, m);
   }
+  return static_cast<int32_t>(acc);
+}
+
+static uint8_t Golden(unsigned n, unsigned m, unsigned k_size,
+                      unsigned layer, bool gelu) {
+  const int64_t acc = GoldenAcc(n, m, k_size);
   const int64_t product = acc * MLP_REQUANT_M[layer];
   const int64_t scaled = product >= 0
                              ? product >> 26
@@ -39,14 +50,16 @@ static uint8_t Golden(unsigned n, unsigned m, unsigned k_size,
 }
 
 static bool RunCase(unsigned n_size, unsigned m_size, unsigned k_size,
-                    unsigned layer, bool gelu) {
+                    unsigned layer, bool gelu, bool output_int32) {
   const unsigned n_words = (n_size + 15) / 16;
   const unsigned m_words = (m_size + 15) / 16;
+  const unsigned c_words = output_int32 ? (m_size + 3) / 4 : m_words;
   // HLS cosim copies the full m_axi depth from each pointer.
-  constexpr unsigned kCosimDepth = 4096;
-  std::vector<MemoryPackN_t> a(kCosimDepth, 0);
-  std::vector<MemoryPackM_t> b(kCosimDepth, 0);
-  std::vector<MemoryPackM_t> c(kCosimDepth, 0);
+  constexpr unsigned kInputDepth = 4096;
+  constexpr unsigned kOutputDepth = 8192;
+  std::vector<MemoryPackN_t> a(kInputDepth, 0);
+  std::vector<MemoryPackM_t> b(kInputDepth, 0);
+  std::vector<MemoryPackM_t> c(kOutputDepth, 0);
 
   for (unsigned k = 0; k < k_size; ++k) {
     for (unsigned n = 0; n < n_size; ++n) {
@@ -58,18 +71,22 @@ static bool RunCase(unsigned n_size, unsigned m_size, unsigned k_size,
   }
 
   MatrixMultiplicationKernelInt8(a.data(), b.data(), c.data(), n_size, k_size,
-                                 m_size, layer, gelu);
+                                 m_size, layer, gelu, output_int32);
 
   unsigned errors = 0;
   for (unsigned n = 0; n < n_size; ++n) {
     for (unsigned m = 0; m < m_size; ++m) {
-      const uint8_t actual = GetByte(c[n * m_words + m / 16], m % 16);
-      const uint8_t expected = Golden(n, m, k_size, layer, gelu);
+      const int64_t actual = output_int32
+                                 ? GetInt32(c[n * c_words + m / 4], m % 4)
+                                 : GetByte(c[n * c_words + m / 16], m % 16);
+      const int64_t expected = output_int32
+                                   ? GoldenAcc(n, m, k_size)
+                                   : Golden(n, m, k_size, layer, gelu);
       if (actual != expected) {
         if (errors < 8) {
           std::cerr << "Mismatch N=" << n << " M=" << m
-                    << " got=" << unsigned(actual)
-                    << " expected=" << unsigned(expected) << '\n';
+                    << " got=" << actual
+                    << " expected=" << expected << '\n';
         }
         ++errors;
       }
@@ -77,15 +94,19 @@ static bool RunCase(unsigned n_size, unsigned m_size, unsigned k_size,
   }
   std::cout << "N=" << n_size << " M=" << m_size << " K=" << k_size
             << " layer=" << layer << " gelu=" << gelu
+            << " int32=" << output_int32
             << " errors=" << errors << '\n';
   return errors == 0;
 }
 
 int main() {
   bool ok = true;
-  ok &= RunCase(16, 16, 7, 0, false);
-  ok &= RunCase(17, 19, 5, 1, true);
-  ok &= RunCase(129, 129, 5, 0, false);
-  ok &= RunCase(129, 129, 7, 1, true);
+  ok &= RunCase(16, 16, 7, 0, false, false);
+  ok &= RunCase(16, 16, 7, 0, false, true);
+  ok &= RunCase(17, 19, 5, 1, true, false);
+  ok &= RunCase(17, 19, 5, 1, true, true);
+  ok &= RunCase(129, 129, 5, 0, false, false);
+  ok &= RunCase(129, 129, 7, 1, false, true);
+  ok &= RunCase(129, 129, 7, 1, true, false);
   return ok ? 0 : 1;
 }

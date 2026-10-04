@@ -34,3 +34,20 @@ void ConvertWidthC_Int8(Stream<AccPack_t> &narrow, Stream<MemoryPackM_t> &wide,
 void WriteC_Int8(Stream<MemoryPackM_t> &pipe, MemoryPackM_t memory[],
                  const unsigned size_n, const unsigned size_k,
                  const unsigned size_m);
+
+void ConvertWidthC_Int32(Stream<AccPack_t> &narrow, Stream<MemoryPackM_t> &wide,
+                         const unsigned size_n, const unsigned size_k,
+                         const unsigned size_m);
+
+void WriteC_Int32(Stream<MemoryPackM_t> &pipe, MemoryPackM_t memory[],
+                  const unsigned size_n, const unsigned size_k,
+                  const unsigned size_m);
+
+void ConvertWidthC_Output(Stream<AccPack_t> &narrow, Stream<MemoryPackM_t> &wide,
+                          const unsigned size_n, const unsigned size_k,
+                          const unsigned size_m, const unsigned layer_idx,
+                          const bool enable_gelu, const bool output_int32);
+
+void WriteC_Output(Stream<MemoryPackM_t> &pipe, MemoryPackM_t memory[],
+                   const unsigned size_n, const unsigned size_k,
+                   const unsigned size_m, const bool output_int32);

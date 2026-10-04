@@ -151,6 +151,111 @@ WriteC_OuterTile_N:
   } // 缁撴潫 Outer_N
 } // 缁撴潫 WriteC_Int8 鍑芥暟
 
+void ConvertWidthC_Int32(Stream<AccPack_t> &narrow, Stream<MemoryPackM_t> &wide,
+                         const unsigned size_n, const unsigned size_k,
+                         const unsigned size_m)
+{
+  static_assert(kComputeTileSizeM == 2 * kMemoryWidthC,
+                "Each accumulator pack must form two 128-bit output words.");
+
+ConvertWidthC_Int32_OuterTile_N:
+  for (unsigned n0 = 0; n0 < OuterTilesN(size_n); ++n0)
+  {
+  ConvertWidthC_Int32_OuterTile_M:
+    for (unsigned m0 = 0; m0 < OuterTilesM(size_m); ++m0)
+    {
+    ConvertWidthC_Int32_N1:
+      for (unsigned n1 = 0; n1 < kOuterTileSizeN; ++n1)
+      {
+      ConvertWidthC_Int32_M1:
+        for (unsigned m1c = 0; m1c < kInnerTilesM; ++m1c)
+        {
+#pragma HLS PIPELINE II = 2
+          const AccPack_t acc = narrow.read();
+          MemoryPackM_t low = 0;
+          MemoryPackM_t high = 0;
+
+        ConvertWidthC_Int32_Lanes:
+          for (unsigned lane = 0; lane < kMemoryWidthC; ++lane)
+          {
+#pragma HLS UNROLL
+            const Acc_t low_acc = acc[lane];
+            const Acc_t high_acc = acc[lane + kMemoryWidthC];
+            low.range((lane + 1) * 32 - 1, lane * 32) = low_acc.range();
+            high.range((lane + 1) * 32 - 1, lane * 32) = high_acc.range();
+          }
+
+          wide.write(low);
+          wide.write(high);
+        }
+      }
+    }
+  }
+}
+
+void WriteC_Int32(Stream<MemoryPackM_t> &pipe, MemoryPackM_t memory[],
+                  const unsigned size_n, const unsigned size_k,
+                  const unsigned size_m)
+{
+WriteC_Int32_OuterTile_N:
+  for (unsigned n0 = 0; n0 < OuterTilesN(size_n); ++n0)
+  {
+  WriteC_Int32_OuterTile_M:
+    for (unsigned m0 = 0; m0 < OuterTilesM(size_m); ++m0)
+    {
+    WriteC_Int32_N1:
+      for (unsigned n1 = 0; n1 < kOuterTileSizeN; ++n1)
+      {
+        const unsigned row = n0 * kOuterTileSizeN + n1;
+        const bool valid_row = row < size_n;
+        const unsigned base_addr = row * SizeCMemory(size_m);
+
+      WriteC_Int32_M1:
+        for (unsigned m1c = 0; m1c < kOuterTileSizeMMemoryC; ++m1c)
+        {
+#pragma HLS PIPELINE II = 1
+          const MemoryPackM_t val = pipe.read();
+          const unsigned packed_m = m0 * kOuterTileSizeMMemoryC + m1c;
+          if (valid_row && packed_m < SizeCMemory(size_m))
+          {
+            memory[base_addr + packed_m] = val;
+          }
+        }
+      }
+    }
+  }
+}
+
+void ConvertWidthC_Output(Stream<AccPack_t> &narrow, Stream<MemoryPackM_t> &wide,
+                          const unsigned size_n, const unsigned size_k,
+                          const unsigned size_m, const unsigned layer_idx,
+                          const bool enable_gelu, const bool output_int32)
+{
+  if (output_int32)
+  {
+    ConvertWidthC_Int32(narrow, wide, size_n, size_k, size_m);
+  }
+  else
+  {
+    ConvertWidthC_Int8(narrow, wide, size_n, size_k, size_m,
+                       layer_idx, enable_gelu);
+  }
+}
+
+void WriteC_Output(Stream<MemoryPackM_t> &pipe, MemoryPackM_t memory[],
+                   const unsigned size_n, const unsigned size_k,
+                   const unsigned size_m, const bool output_int32)
+{
+  if (output_int32)
+  {
+    WriteC_Int32(pipe, memory, size_n, size_k, size_m);
+  }
+  else
+  {
+    WriteC_Int8(pipe, memory, size_n, size_k, size_m);
+  }
+}
+
 namespace
 {
 

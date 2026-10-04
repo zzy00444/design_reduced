@@ -132,17 +132,19 @@ extern "C" void MatrixMultiplicationKernelInt8(MemoryPackN_t const a[],
                                                const unsigned size_k,
                                                const unsigned size_m,
                                                const unsigned layer_idx, // <--- 鍛婅瘔 FPGA 褰撳墠鏄摢锟??锟??
-                                               const bool enable_gelu)   // <--- GELU 鏃佽矾锟??锟??
+                                               const bool enable_gelu,
+                                               const bool output_int32)
 {
 #pragma HLS INTERFACE m_axi port = a offset = slave bundle = gmem0 depth = 4096 max_read_burst_length = 64 num_read_outstanding = 8
 #pragma HLS INTERFACE m_axi port = b offset = slave bundle = gmem1 depth = 4096 max_read_burst_length = 64 num_read_outstanding = 8
-#pragma HLS INTERFACE m_axi port = c offset = slave bundle = gmem2 depth = 4096 max_write_burst_length = 64 num_write_outstanding = 8
+#pragma HLS INTERFACE m_axi port = c offset = slave bundle = gmem2 depth = 8192 max_write_burst_length = 64 num_write_outstanding = 8
 #pragma HLS INTERFACE s_axilite port = return
 #pragma HLS INTERFACE s_axilite port = size_n
 #pragma HLS INTERFACE s_axilite port = size_k
 #pragma HLS INTERFACE s_axilite port = size_m
 #pragma HLS INTERFACE s_axilite port = layer_idx
 #pragma HLS INTERFACE s_axilite port = enable_gelu
+#pragma HLS INTERFACE s_axilite port = output_int32
 
 #pragma HLS DATAFLOW
 
@@ -201,8 +203,8 @@ extern "C" void MatrixMultiplicationKernelInt8(MemoryPackN_t const a[],
   HLSLIB_DATAFLOW_FUNCTION(CollectC_Adapter, cPipes, cMerged, size_n, size_k, size_m);
 
   // 鏇挎崲涓轰綘鏂板啓鐨勬ā锟??
-  HLSLIB_DATAFLOW_FUNCTION(ConvertWidthC_Int8, cMerged, cMemory, size_n, size_k, size_m, layer_idx, enable_gelu);
-  HLSLIB_DATAFLOW_FUNCTION(WriteC_Int8, cMemory, c, size_n, size_k, size_m);
+  HLSLIB_DATAFLOW_FUNCTION(ConvertWidthC_Output, cMerged, cMemory, size_n, size_k, size_m, layer_idx, enable_gelu, output_int32);
+  HLSLIB_DATAFLOW_FUNCTION(WriteC_Output, cMemory, c, size_n, size_k, size_m, output_int32);
 
   HLSLIB_DATAFLOW_FINALIZE();
 }

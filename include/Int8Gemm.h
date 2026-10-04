@@ -693,12 +693,16 @@ inline Data_t GetBElement(const ComputePackM_t &pack, const unsigned m_lane, con
 // }
 extern "C"
 {
+  // C is 128 bits per word: 16 UINT8 values or 4 signed INT32 values.
+  // output_int32 bypasses requantization and GELU; row strides are
+  // ceil(size_m / 16) and ceil(size_m / 4) words, respectively.
   void MatrixMultiplicationKernelInt8(MemoryPackN_t const a[],
                                       MemoryPackM_t const b[],
-                                      MemoryPackM_t c[], // 修改点 1：类型改为 MemoryPackM_t
+                                      MemoryPackM_t c[],
                                       const unsigned size_n,
                                       const unsigned size_k,
                                       const unsigned size_m,
-                                      const unsigned layer_idx, // 修改点 2：新增层索引
-                                      const bool enable_gelu);  // 修改点 3：新增 GELU 开关
+                                      const unsigned layer_idx,
+                                      const bool enable_gelu,
+                                      const bool output_int32);
 }
